@@ -17,7 +17,7 @@ def on_activate(to_print):
 
 def update_shortcuts(shortcuts):
     h = keyboard.GlobalHotKeys(
-        {shortcut.hotkey:lambda: on_activate(shortcut.id) for shortcut in shortcuts}
+        {shortcut.hotkey:lambda shortcut=shortcut: on_activate(shortcut.id) for shortcut in shortcuts}
     )
     h.start()
     return h
