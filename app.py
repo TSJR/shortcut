@@ -1,74 +1,118 @@
 from pynput import mouse, keyboard
-from pynput.keyboard import Key, KeyCode, Controller as kb_controller
-from pynput.mouse import Controller as mouse_controller
-import tkinter as tk
-from tkinter import Label
-from shortcut import Shortcut
+from pynput.keyboard import Controller as kb_controller
+from pynput.mouse import Button, Controller as mouse_controller
+import subprocess
+import time
+from pprint import pprint
+
 
 mouse_ctl = mouse_controller()
 kb_ctl = kb_controller()
-recording = False # record movements for hotkey
 
-shortcuts = []
+recording = False # record movements for hotkey
+registering = False # waiting for key to be registered
+hotkeys = [] # registered hot keys
 cur_thread = None
 
-def on_activate(to_print):
-    print(to_print)
+movements = {}
+cur_movement = [] # schema: 
+"""
+["scroll", x, y],
+["click", button, x, y]
+"""
+cur_time = 0
 
-def update_shortcuts(shortcuts):
+def millis():
+    return round(time.time() * 1000)
+
+def send_notification(message):
+  subprocess.run([
+    "osascript", "-e", 
+    f'display notification "{message}" with title "Shortcut Manager"'
+])
+    
+def toggle_recording():
+    global recording, registering, cur_time
+    recording = not recording
+    cur_time = millis()
+
+    if recording:
+        send_notification("Recording screen activity")
+    else:
+        send_notification("Recording halted")
+        registering = True
+
+
+def run_shortcut(hotkey):
+    if hotkey[-1] == "a":
+        toggle_recording()
+        return
+    if hotkey[-1] == "b":
+        pprint(movements)
+
+def update_hotkeys(shortcuts):
     h = keyboard.GlobalHotKeys(
-        {shortcut.hotkey:lambda shortcut=shortcut: on_activate(shortcut.id) for shortcut in shortcuts}
+        {hotkey:lambda hotkey=hotkey: run_shortcut(hotkey) for hotkey in hotkeys}
     )
     h.start()
     return h
 
-def add_shortcut(hotkey):
+def add_hotkey(hotkey):
     global cur_thread
-    shortcuts.append(Shortcut(hotkey))
+    hotkeys.append(hotkey)
     if cur_thread:
         cur_thread.stop()
-        print("thread stopped")
-    for shortcut in shortcuts:
-        shortcut.dump()
-    
-    cur_thread = update_shortcuts(shortcuts)
+    cur_thread = update_hotkeys(hotkeys)
 
-def on_click():
-    label_text.set("Clicked")
-    pass
+def on_click(x, y, button, pressed):
+    global cur_time
+
+    if recording and pressed:
+        cur_movement.append(millis() - cur_time)
+        cur_time = millis()
+
+        if button == Button.left: # 0 for left, 1 for right
+            cur_movement.append(["click", 0, x, y])
+            return
+        cur_movement.append(["click", 1, x, y])
+
+def on_scroll(x, y, dx, dy):
+    if recording:
+        cur_movement.append(millis() - cur_time)
+        cur_time = millis()
+        cur_movement.append(["scroll", x, y, dx, dy])
 
 def on_press(key):
-    pass
+    global registering, movements, cur_movement
 
-def on_release(key):
-    pass
+    if registering:
+        add_hotkey(f'<ctrl>+{key.char}')
+        f'<ctrl>+{key.char}'
+        movements[f'<ctrl>+{key.char}'] = cur_movement
+        cur_movement = []
+
+        send_notification(f'Saved to {key.char.upper()}')
+        registering = False
 
 if __name__ == "__main__":
+    cur_time = millis()
     mouse_listener = mouse.Listener(
         on_click=on_click,
+        on_scroll=on_scroll
     )
     mouse_listener.start()
     kb_listener = keyboard.Listener(
         on_press=on_press,
-        on_release=on_release,
+        # on_release=on_release,
     )
     kb_listener.start()
+
     print("Running once")
-    add_shortcut("<ctrl>+a")
-    add_shortcut("<ctrl>+b")
-    add_shortcut("<ctrl>+d")
-
-    
+    add_hotkey("<ctrl>+a")
+    add_hotkey("<ctrl>+b")
     
 
-    root = tk.Tk()
-    root.title("App")
-    root.geometry("300x150")
-    root.attributes('-topmost', True)
-    label_text = tk.StringVar(value="Default Value")
-
-    label = Label(root, textvariable=label_text)
-    label.pack()
-
-    root.mainloop()
+    
+    while True:
+        pass
 
