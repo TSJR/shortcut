@@ -5,7 +5,6 @@ import subprocess
 import time
 from pprint import pprint
 
-
 mouse_ctl = mouse_controller()
 kb_ctl = kb_controller()
 
@@ -14,12 +13,11 @@ registering = False # waiting for key to be registered
 hotkeys = [] # registered hot keys
 cur_thread = None
 
+speed = 2 # 200%
+
 movements = {}
 cur_movement = [] # schema: 
-"""
-["scroll", x, y],
-["click", button, x, y]
-"""
+
 cur_time = 0
 
 def millis():
@@ -42,13 +40,30 @@ def toggle_recording():
         send_notification("Recording halted")
         registering = True
 
-
 def run_shortcut(hotkey):
     if hotkey[-1] == "a":
         toggle_recording()
         return
     if hotkey[-1] == "b":
         pprint(movements)
+        return
+    else:
+        for movement in movements[hotkey]:
+            movement_type = movement["type"]
+            if movement_type == "time":
+                time.sleep(movement["millis"] / 1000 / speed)
+            elif movement_type == "click":
+                mouse_ctl.position = (movement["x"], movement["y"])
+                time.sleep(0.2)
+                button = movement["button"]
+                if button == 1:
+                    mouse_ctl.click(Button.left)
+                elif button == 3:
+                    mouse_ctl.click(Button.right)
+            elif movement_type == "scroll":
+                mouse_ctl.position = (movement["x"], movement["y"])
+                time.sleep(0.2)
+                mouse_ctl.scroll(movement["dx"], movement["dy"])
 
 def update_hotkeys(shortcuts):
     h = keyboard.GlobalHotKeys(
@@ -68,27 +83,26 @@ def on_click(x, y, button, pressed):
     global cur_time
 
     if recording and pressed:
-        cur_movement.append(millis() - cur_time)
+        cur_movement.append({"type": "time", "millis": millis() - cur_time})
         cur_time = millis()
 
-        if button == Button.left: # 0 for left, 1 for right
-            cur_movement.append(["click", 0, x, y])
-            return
-        cur_movement.append(["click", 1, x, y])
+        cur_movement.append({"type": "click", "x": x, "y": y, "button": 1 if button == Button.left else 3}) # left: 1, right: 3
 
 def on_scroll(x, y, dx, dy):
-    if recording:
-        cur_movement.append(millis() - cur_time)
-        cur_time = millis()
-        cur_movement.append(["scroll", x, y, dx, dy])
+    global cur_time
 
+    if recording:
+        cur_movement.append({"type": "time", "millis": millis() - cur_time})
+        cur_time = millis()
+        cur_movement.append({"type": "scroll", "x": x, "y": y, "dx": dx, "dy": dy})
+       
 def on_press(key):
     global registering, movements, cur_movement
 
     if registering:
         add_hotkey(f'<ctrl>+{key.char}')
         f'<ctrl>+{key.char}'
-        movements[f'<ctrl>+{key.char}'] = cur_movement
+        movements[f'<ctrl>+{key.char}'] = cur_movement[1:]
         cur_movement = []
 
         send_notification(f'Saved to {key.char.upper()}')
@@ -107,11 +121,8 @@ if __name__ == "__main__":
     )
     kb_listener.start()
 
-    print("Running once")
     add_hotkey("<ctrl>+a")
     add_hotkey("<ctrl>+b")
-    
-
     
     while True:
         pass
